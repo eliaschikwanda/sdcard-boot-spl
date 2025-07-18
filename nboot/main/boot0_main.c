@@ -6,12 +6,17 @@
 
 #include <common.h>
 #include <private_boot0.h>
+#include <mmc_boot0.h>
 #include <arch/clock.h>
 #include <arch/uart.h>
 #include <arch/dram.h>
 #include <arch/gpio.h>
 
+#define BLOCK_SIZE 512
+#define DEV_NUM 0
+
 int load_image_from_sdcard_fat(const char *filename, uintptr_t start_addr);
+bool compare_arrays(char *arr1, char *arr2, int size);
 
 static int boot0_clear_env(void);
 
@@ -35,9 +40,9 @@ void main(void)
 	mdelay(5*1000); // pause for terminal to catch up
 	// blink(10);
 
-	printf("HELLO! BOOT0 is starting!\n");
+	printf("Welcome!!!!! HELLO! BOOT0 is starting!\n");
 	printf("BOOT0 commit : %s\n", BT0_head.hash);
-	printf("This is boot0 modified for CS107E Mango Pi (load mango.bin image from sdcard FAT32)\n");
+	printf("Booting Mango Pi - loading 'MANGO.BIN' from SD...\n");
 
 	sunxi_set_printf_debug_mode(BT0_head.prvt_head.debug_mode);
 
@@ -58,16 +63,70 @@ void main(void)
 	const char *kernel_file = "MANGO.BIN";
 	uintptr_t start_addr = 0x40000000;
 	int error = load_image_from_sdcard_fat(kernel_file, start_addr);
-	if (error == 0) {
-		printf("read file '%s' from SD card, load address @0x%x and exec...\n", kernel_file, start_addr);
-		boot0_jmp(start_addr); // does not return
-	} else {
+	if (error != 0) {
 		printf("unable to read file '%s' from SD card (error code %d), exiting to FEL\n", kernel_file, error);
+	} else {
+	printf("\n \n TESTING STARTING \n \n");
+		// TEST 1: READ AND WRITE FROM BLOCK 1
+			char buff_w[BLOCK_SIZE]; // Buffer with data populated for writing
+			char buff_r[BLOCK_SIZE]; // Buffer with data populate for reading
+
+			memset(buff_w, 0x00, BLOCK_SIZE); // Data to be written
+			memset(buff_r, 0xff, BLOCK_SIZE); // Fill the buf with dirt to be overwritten
+			int blocks_written = mmc_bwrite(DEV_NUM, 1024, 1, buff_w);
+			if (blocks_written != 1) {
+				printf("Test1: Error writing to the disk\n");
+			}
+
+			mdelay(50);
+
+			//Check if you read 0x00
+			int blocks_read = mmc_bread(DEV_NUM, 1024, 1, buff_r);
+			if (blocks_read != 1) {
+				printf("Test1: Error reading from disk\n");
+			}
+			// Test if the data read is correct
+			if (compare_arrays(buff_w, buff_r, BLOCK_SIZE)) {
+				printf("Test 1: Passed\n");
+			}
+
+		// TEST 2: WRITE DATA BIGGER THAN 1 BLOCK
+			char buff_w2[BLOCK_SIZE * 2];
+			char buff_r2[BLOCK_SIZE * 2];
+
+			mdelay(50);
+
+			memset(buff_w2, 'e', BLOCK_SIZE * 2);
+			memset(buff_r2, 'm', BLOCK_SIZE * 2); // Fill it with dirt to be overwritten
+
+			blocks_written = mmc_bwrite(DEV_NUM, 1025, 2, buff_w2);
+			mdelay(50);
+			if (blocks_written != 2) {
+				printf("Test 2: Error writing to disk.\n");
+			} else {
+				blocks_read = mmc_bread(DEV_NUM, 1025, 2, buff_r2);
+				if (blocks_read != 2) {
+					printf("Test2: Error reading from disk.\n");
+				}
+				if (compare_arrays(buff_w2, buff_r2, BLOCK_SIZE * 2)) {
+					printf("Test2: Passed\n");
+				}
+			}
 	}
 
 _BOOT_ERROR:
 	boot0_clear_env();
 	boot0_jmp(FEL_BASE);
+}
+
+bool compare_arrays(char *arr1, char *arr2, int size) {
+	for (int i = 0; i < size; i++) {
+		if (arr1[i] != arr2[i]) {
+			printf("Test Failed: buff_w[%d] (%d) != buff_r[%d] (%d)\n", i, arr1[i], i, arr2[i]);
+			return false;
+		}
+	}
+	return true;
 }
 
 static int boot0_clear_env(void)
