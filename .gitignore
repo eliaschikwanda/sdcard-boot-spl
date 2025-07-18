@@ -18,4 +18,6 @@ drivers/dram/sun50iw10p1/libchipid
 drivers/dram/sun50iw11p1/libchipid
 *.patch
 *.swp
+disk4
+nboot/boot0_sdcard_sun20iw1p1.bin
 libdram
