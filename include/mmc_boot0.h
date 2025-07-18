@@ -13,6 +13,7 @@
 void set_mmc_para(int smc_no, void *sdly_addr, phys_addr_t uboot_base);
 int get_card_type(void);
 unsigned long mmc_bread(int dev_num, unsigned long start, unsigned blkcnt, void *dst);
+unsigned long mmc_bwrite(int dev_num, unsigned long start, unsigned long blkcnt, const void *src);
 int sunxi_mmc_init(int sdc_no, unsigned bus_width, const normal_gpio_cfg *gpio_info, int offset);
 int sunxi_mmc_exit(int sdc_no, const normal_gpio_cfg *gpio_info, int offset);
 
