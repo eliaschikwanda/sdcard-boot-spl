@@ -166,7 +166,7 @@ unsigned long mmc_bread(int dev_num, unsigned long start, unsigned blkcnt,
 	}
 
 	if (mmc_set_blocklen(mmc, mmc->read_bl_len)) {
-		mmcinfo("mmc %u Set block len failed\n", mmc->control_num);
+		mmcinfo("mmc_bread %u Set block len failed\n", mmc->control_num);
 		return 0;
 	}
 
@@ -1336,4 +1336,96 @@ int mmc_unregister(int dev_num)
 	mmc_devices[dev_num] = NULL;
 	mmcdbg("mmc%d unregister\n", dev_num);
 	return 0;
+}
+
+/**
+ * Extension for block writing
+ */
+
+int mmc_write_blocks(struct mmc *mmc, const void *src, unsigned long start, unsigned blkcnt) {
+	struct mmc_cmd cmd;
+	struct mmc_data data;
+	int timeout = 1000;
+
+	if (blkcnt > 1) {
+        cmd.cmdidx = MMC_CMD_WRITE_MULTIPLE_BLOCK;
+    } else {
+        cmd.cmdidx = MMC_CMD_WRITE_SINGLE_BLOCK;
+    }
+
+    if (mmc->high_capacity) {
+        cmd.cmdarg = start;
+    } else {
+        cmd.cmdarg = start * mmc->write_bl_len;
+    }
+
+    cmd.resp_type = MMC_RSP_R1;
+    cmd.flags = 0;
+
+    data.b.src = src;
+    data.blocks = blkcnt;
+    data.blocksize = mmc->write_bl_len;
+    data.flags = MMC_DATA_WRITE;
+
+    if (mmc_send_cmd(mmc, &cmd, &data)) {
+    	mmcinfo("mmc %u write block failed\n", mmc->control_num);
+    	return 0;
+    }
+
+    if (blkcnt > 1) {
+        cmd.cmdidx = MMC_CMD_STOP_TRANSMISSION;
+        cmd.cmdarg = 0;
+        cmd.resp_type = MMC_RSP_R1b;
+        cmd.flags = 0;
+        if (mmc_send_cmd(mmc, &cmd, NULL)) {
+            mmcinfo("mmc %u failed to send stop cmd\n", mmc->control_num);
+            return 0;
+        }
+
+        /* Waiting for the ready status */
+        mmc_send_status(mmc, timeout);
+    }
+
+    return blkcnt;
+}
+
+unsigned long mmc_bwrite(int dev_num, unsigned long start, unsigned long blkcnt, const void *src)
+{
+	unsigned cur, blocks_todo = blkcnt;
+	struct mmc *mmc = find_mmc_device(dev_num);
+
+	if (blkcnt == 0) {
+		mmcinfo("mmc %u blkcnt should not be 0 \n", mmc->control_num);
+		return 0;
+	}
+	if (!mmc) {
+		mmcinfo("Can not find mmc dev %d\n", dev_num);
+		return 0;
+	}
+
+	if ((start + blkcnt) > mmc->lba) {
+		mmcinfo("mmc %u: block number 0x%x exceed max(0x%x)\n",
+			mmc->control_num, (unsigned int)(start + blkcnt),
+			(unsigned int)mmc->lba);
+		return 0;
+	}
+
+	if (mmc_set_blocklen(mmc, mmc->write_bl_len)) {
+		mmcinfo("mmc_bwrite %u Set block len failed\n", mmc->control_num);
+		return 0;
+	}
+
+	do {
+		cur = (blocks_todo > mmc->b_max) ? mmc->b_max : blocks_todo;
+		if (mmc_write_blocks(mmc, src, start, cur) != cur) {
+			mmcinfo("mmc %u block write failed \n", mmc->control_num);
+			return 0;
+		}
+		blocks_todo -= cur;
+		start += cur;
+		src = (const char*)src + cur * mmc->write_bl_len;
+
+	} while (blocks_todo > 0);
+
+	return blkcnt;
 }
