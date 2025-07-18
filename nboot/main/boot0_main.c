@@ -78,7 +78,7 @@ void main(void)
 				printf("Test1: Error writing to the disk\n");
 			}
 
-			mdelay(50);
+			mdelay(100);
 
 			//Check if you read 0x00
 			int blocks_read = mmc_bread(DEV_NUM, 1024, 1, buff_r);
